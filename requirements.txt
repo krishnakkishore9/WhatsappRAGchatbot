@@ -8,3 +8,4 @@ langchain-text-splitters
 pypdf
 httpx
 google-generativeai
+python-multipart
