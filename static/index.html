@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp RAG - Admin Panel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { margin-bottom: 20px; }
+        .log-container { max-height: 400px; overflow-y: auto; }
+        .log-entry { padding: 10px; border-bottom: 1px solid #eee; }
+        .role-user { font-weight: bold; color: #0d6efd; }
+        .role-assistant { font-weight: bold; color: #198754; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1">WhatsApp RAG Chatbot Admin</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <!-- Upload Section -->
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">Upload Documents</div>
+                    <div class="card-body">
+                        <form id="uploadForm">
+                            <div class="mb-3">
+                                <label for="fileInput" class="form-label">PDF or TXT File</label>
+                                <input class="form-control" type="file" id="fileInput" accept=".pdf,.txt" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100" id="uploadBtn">Upload & Index</button>
+                        </form>
+                        <div id="uploadStatus" class="mt-2 small"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Documents Section -->
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">Indexed Documents</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Filename</th>
+                                        <th>Status</th>
+                                        <th>Uploaded At</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="docsTable">
+                                    <!-- Loaded via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        Recent Chat Logs
+                        <button class="btn btn-sm btn-outline-light" onclick="loadLogs()">Refresh</button>
+                    </div>
+                    <div class="card-body log-container" id="logsContainer">
+                        <!-- Loaded via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load Documents
+        async function loadDocs() {
+            const res = await fetch('/admin/documents');
+            const docs = await res.json();
+            const tbody = document.getElementById('docsTable');
+            tbody.innerHTML = docs.map(doc => `
+                <tr>
+                    <td>${doc.filename}</td>
+                    <td><span class="badge ${doc.status === 'indexed' ? 'bg-success' : 'bg-warning'}">${doc.status}</span></td>
+                    <td>${new Date(doc.created_at).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Load Logs
+        async function loadLogs() {
+            const res = await fetch('/admin/logs');
+            const logs = await res.json();
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = logs.map(log => `
+                <div class="log-entry">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="role-${log.role}">${log.role.toUpperCase()} - ${log.conversations.phone_number}</span>
+                        <small class="text-muted">${new Date(log.created_at).toLocaleString()}</small>
+                    </div>
+                    <div>${log.content}</div>
+                </div>
+            `).join('') || '<div class="text-center p-4 text-muted">No logs found</div>';
+        }
+
+        // Handle Upload
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('fileInput');
+            const btn = document.getElementById('uploadBtn');
+            const status = document.getElementById('uploadStatus');
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            btn.disabled = true;
+            status.innerHTML = 'Uploading and indexing... please wait.';
+
+            try {
+                const res = await fetch('/admin/upload', { method: 'POST', body: formData });
+                const result = await res.json();
+                if (res.ok) {
+                    status.innerHTML = '<span class="text-success">Successfully indexed!</span>';
+                    loadDocs();
+                } else {
+                    status.innerHTML = `<span class="text-danger">Error: ${result.detail}</span>`;
+                }
+            } catch (err) {
+                status.innerHTML = `<span class="text-danger">Error: ${err.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                fileInput.value = '';
+            }
+        };
+
+        // Initial Load
+        loadDocs();
+        loadLogs();
+        // Auto refresh logs every 30 seconds
+        setInterval(loadLogs, 30000);
+    </script>
+</body>
+</html>
