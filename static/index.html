@@ -52,6 +52,7 @@
                                         <th>Filename</th>
                                         <th>Status</th>
                                         <th>Uploaded At</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="docsTable">
@@ -91,9 +92,23 @@
                     <td>${doc.filename}</td>
                     <td><span class="badge ${doc.status === 'indexed' ? 'bg-success' : 'bg-warning'}">${doc.status}</span></td>
                     <td>${new Date(doc.created_at).toLocaleString()}</td>
+                    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteDoc('${doc.id}')">Delete</button></td>
                 </tr>
             `).join('');
         }
+
+        // Delete Document
+        async function deleteDoc(docId) {
+            if (!confirm('Delete this document and its vectors from Pinecone?')) return;
+            const res = await fetch(`/admin/documents/${docId}`, { method: 'DELETE' });
+            if (res.ok) {
+                loadDocs();
+            } else {
+                const result = await res.json();
+                alert('Error: ' + result.detail);
+            }
+        }
+
 
         // Load Logs
         async function loadLogs() {

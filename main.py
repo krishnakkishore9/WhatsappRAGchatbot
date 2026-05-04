@@ -181,6 +181,19 @@ async def list_documents():
     res = supabase.table("documents").select("*").order("created_at", desc=True).execute()
     return res.data
 
+@app.delete("/admin/documents/{doc_id}")
+async def delete_document(doc_id: str):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    try:
+        # 1. Delete vectors from Pinecone
+        rag_service.index.delete(filter={"document_id": doc_id})
+    except Exception as e:
+        print(f"Pinecone delete warning: {e}")
+    # 2. Delete record from Supabase
+    supabase.table("documents").delete().eq("id", doc_id).execute()
+    return {"message": "Document deleted successfully"}
+
 @app.get("/admin/logs")
 async def list_logs():
     if not supabase:
