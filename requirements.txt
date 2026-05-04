@@ -7,5 +7,4 @@ pinecone
 langchain-text-splitters
 pypdf
 httpx
-sentence-transformers
 google-generativeai
