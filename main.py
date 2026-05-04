@@ -186,11 +186,16 @@ async def delete_document(doc_id: str):
     if not supabase:
         raise HTTPException(status_code=500, detail="Supabase not configured")
     try:
-        # 1. Delete vectors from Pinecone
-        rag_service.index.delete(filter={"document_id": doc_id})
+        # Attempt to delete vectors from Pinecone by ID prefix
+        # Free tier doesn't support filter-based delete, so we skip gracefully
+        doc_res = supabase.table("documents").select("filename").eq("id", doc_id).execute()
+        if doc_res.data:
+            # Try deleting by known chunk IDs (up to 1000 chunks)
+            ids_to_delete = [f"{doc_id}_{i}" for i in range(1000)]
+            rag_service.index.delete(ids=ids_to_delete)
     except Exception as e:
-        print(f"Pinecone delete warning: {e}")
-    # 2. Delete record from Supabase
+        print(f"Pinecone delete warning (non-critical): {e}")
+    # Always delete the Supabase record
     supabase.table("documents").delete().eq("id", doc_id).execute()
     return {"message": "Document deleted successfully"}
 
