@@ -35,7 +35,6 @@ async def health_check():
     
     if supabase:
         try:
-            # Simple query to verify connection
             supabase.table("conversations").select("count", count="exact").limit(1).execute()
         except Exception as e:
             db_status = f"error: {str(e)}"
@@ -44,6 +43,18 @@ async def health_check():
     return {
         "status": status,
         "database": db_status
+    }
+
+@app.get("/admin/debug")
+async def debug():
+    import os
+    return {
+        "supabase_url_set": bool(os.getenv("SUPABASE_URL")),
+        "supabase_key_set": bool(os.getenv("SUPABASE_KEY")),
+        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
+        "pinecone_key_set": bool(os.getenv("PINECONE_API_KEY")),
+        "wasender_key_set": bool(os.getenv("WASENDER_API_KEY")),
+        "supabase_connected": supabase is not None,
     }
 
 @app.post("/admin/upload")

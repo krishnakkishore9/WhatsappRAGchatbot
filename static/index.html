@@ -84,17 +84,26 @@
     <script>
         // Load Documents
         async function loadDocs() {
-            const res = await fetch('/admin/documents');
-            const docs = await res.json();
-            const tbody = document.getElementById('docsTable');
-            tbody.innerHTML = docs.map(doc => `
-                <tr>
-                    <td>${doc.filename}</td>
-                    <td><span class="badge ${doc.status === 'indexed' ? 'bg-success' : 'bg-warning'}">${doc.status}</span></td>
-                    <td>${new Date(doc.created_at).toLocaleString()}</td>
-                    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteDoc('${doc.id}')">Delete</button></td>
-                </tr>
-            `).join('');
+            try {
+                const res = await fetch('/admin/documents');
+                if (!res.ok) {
+                    const text = await res.text();
+                    document.getElementById('docsTable').innerHTML = `<tr><td colspan="4" class="text-danger">Server error ${res.status}: ${text.substring(0, 200)}</td></tr>`;
+                    return;
+                }
+                const docs = await res.json();
+                const tbody = document.getElementById('docsTable');
+                tbody.innerHTML = docs.length ? docs.map(doc => `
+                    <tr>
+                        <td>${doc.filename}</td>
+                        <td><span class="badge ${doc.status === 'indexed' ? 'bg-success' : 'bg-warning'}">${doc.status}</span></td>
+                        <td>${new Date(doc.created_at).toLocaleString()}</td>
+                        <td><button class="btn btn-sm btn-outline-danger" onclick="deleteDoc('${doc.id}')">Delete</button></td>
+                    </tr>
+                `).join('') : '<tr><td colspan="4" class="text-center text-muted">No documents uploaded yet.</td></tr>';
+            } catch(err) {
+                document.getElementById('docsTable').innerHTML = `<tr><td colspan="4" class="text-danger">JS Error: ${err.message}</td></tr>`;
+            }
         }
 
         // Delete Document
