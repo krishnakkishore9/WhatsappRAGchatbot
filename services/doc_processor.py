@@ -14,14 +14,14 @@ class DocumentProcessor:
         
         # New Pinecone SDK Initialization
         self.pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-        self.index_name = "txstate-rag-openai" # New index for 1536 dimensions
+        self.index_name = "txstate-rag-v2" # Using existing index
         
         # Create index if it doesn't exist
         existing_indexes = [index.name for index in self.pc.list_indexes()]
         if self.index_name not in existing_indexes:
             self.pc.create_index(
                 name=self.index_name,
-                dimension=1536, # text-embedding-3-small dimension
+                dimension=384, # text-embedding-3-small truncated
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1")
             )
@@ -55,8 +55,8 @@ class DocumentProcessor:
         
         vectors = []
         for i, chunk in enumerate(chunks):
-            # Generate embedding with OpenAI
-            res = self.openai_client.embeddings.create(input=[chunk], model="text-embedding-3-small")
+            # Generate embedding with OpenAI (truncated to 384 to match existing index size)
+            res = self.openai_client.embeddings.create(input=[chunk], model="text-embedding-3-small", dimensions=384)
             embedding = res.data[0].embedding
             
             # Prepare metadata
