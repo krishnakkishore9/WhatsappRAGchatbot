@@ -173,3 +173,34 @@ When a WhatsApp message arrives:
 - **Ephemeral disk**: Uploaded PDF files are deleted on every redeploy. Re-upload via the Admin UI after each deployment — Pinecone vectors are unaffected and persist.
 - **Memory**: 512MB RAM limit on Render free tier. FastEmbed uses ~150MB at runtime, leaving comfortable headroom.
 - **LLM credits**: OpenAI (`gpt-4o-mini`) requires a funded account. If credits run out, the system automatically falls back to HuggingFace and then Gemini at no cost.
+
+---
+
+## 📚 Real-World Q&A Examples
+
+Here are examples of how Bob uses your uploaded documents to answer questions:
+
+| User Question | Bob's Answer (The "Magic") | Source Document Used |
+|:---|:---|:---|
+| *"What is the admission fee for 2024?"* | *"Based on the Fees Policy, the admission fee for the 2024 academic year is $500..."* | `fees_policy.pdf` |
+| *"Do you have an MBA program?"* | *"Yes! According to the Course Details, we offer a 2-year MBA program with specializations in..."* | `course_details.pdf` |
+| *"How do I apply?"* | *"You can apply online via our portal. The Admission Process document states you need your high school transcripts..."* | `admission_process.pdf` |
+| *"What is the attendance policy?"* | *"According to University Policies, a minimum of 75% attendance is required to sit for exams..."* | `university_policies.pdf` |
+| *"Do you provide hostel facilities?"* | *"Yes, the FAQ document mentions that we have separate hostels for boys and girls with 24/7 security..."* | `faq.pdf` |
+| *"When is the annual fest?"* | *"The University Brochure mentions that our annual cultural fest, 'Euphoria', usually happens in March..."* | `brochure.pdf` |
+| *"What are the library timings?"* | *"The Student Handbook states the library is open from 8:00 AM to 10:00 PM on weekdays and until 6:00 PM on Saturdays."* | `handbook.pdf` |
+| *"What is the CSE placement record?"* | *"According to the 2023 Placement Report, the CSE department had a 95% placement rate with a median package of $12 LPA."* | `placement_report.pdf` |
+| *"What is the deadline for the final semester project?"* | *"The Academic Calendar for 2024 indicates that final semester project submissions are due by May 15th."* | `academic_calendar.pdf` |
+| *"Can I get a refund if I cancel?"* | *"I'm sorry, I don't have that information. Please contact the Admissions Office at 9704574919 or test@gmail.com for further assistance."* | *(Not in uploaded PDFs)* |
+
+---
+
+## 🚀 Advanced Scenarios
+
+- **Contextual Follow-ups**: Bob remembers the flow of a conversation. If a user asks *"What about the hostel?"* right after asking about admissions, Bob understands the context and doesn't require them to repeat themselves.
+
+- **Multi-Document Synthesis**: If relevant information is spread across multiple uploaded PDFs (e.g., a fee structure in one file and a scholarship deadline in another), Bob combines them into a single, coherent answer rather than answering from just one source.
+
+- **Graceful Fallback for Unknown Questions**: If a question is outside the scope of all uploaded documents, Bob doesn't hallucinate. Instead, it clearly states it doesn't have that information and directs the user to the appropriate contact (Admissions Office number/email defined in the system prompt).
+
+- **LLM Resilience**: If OpenAI is unavailable or out of credits, the system silently retries with HuggingFace models (`Meta-Llama-3.1-8B`, `Mistral-7B`, etc.) and finally falls back to **Google Gemini** — all without any user-facing error or disruption.
