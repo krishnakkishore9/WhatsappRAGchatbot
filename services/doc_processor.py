@@ -2,15 +2,15 @@ import os
 from typing import List
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
+from services.embedding_service import EmbeddingService
 
 load_dotenv(override=True)
 
 class DocumentProcessor:
     def __init__(self):
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        self.embedder = EmbeddingService()
         
         # New Pinecone SDK Initialization
         self.pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -55,13 +55,8 @@ class DocumentProcessor:
         
         vectors = []
         for i, chunk in enumerate(chunks):
-            # Generate embedding with Google Gemini (384 dimensions, matches existing Pinecone index)
-            result = genai.embed_content(
-                model="models/text-embedding-004",
-                content=chunk,
-                output_dimensionality=384
-            )
-            embedding = result['embedding']
+            # Generate embedding via EmbeddingService (Gemini → HuggingFace fallback)
+            embedding = self.embedder.embed(chunk)
             
             # Prepare metadata
             metadata = {
