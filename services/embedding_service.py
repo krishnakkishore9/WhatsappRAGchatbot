@@ -59,7 +59,7 @@ class EmbeddingService:
         if not self.hf_key:
             raise RuntimeError("No embedding service available. Please set GEMINI_API_KEY or HF_API_KEY.")
 
-        api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{self.HF_MODEL}"
+        api_url = f"https://api-inference.huggingface.co/models/{self.HF_MODEL}"
         headers = {"Authorization": f"Bearer {self.hf_key}"}
 
         with httpx.Client() as client:
@@ -72,12 +72,18 @@ class EmbeddingService:
             response.raise_for_status()
             result = response.json()
 
-        # HF returns a list of token embeddings; we mean-pool to get sentence embedding
-        if isinstance(result[0], list):
-            # Token-level embeddings — mean pool across tokens
-            tokens = result
-            mean_vec = [sum(t[i] for t in tokens) / len(tokens) for i in range(len(tokens[0]))]
-            return mean_vec[:self.EMBEDDING_DIM]
-        else:
-            # Already a sentence embedding
+        # sentence-transformers models return a list of lists (batch of 1 → [[v1, v2, ...]])
+        if isinstance(result, list) and isinstance(result[0], list):
+            if isinstance(result[0][0], list):
+                # Token-level embeddings — mean pool
+                tokens = result[0]
+                mean_vec = [sum(t[i] for t in tokens) / len(tokens) for i in range(len(tokens[0]))]
+                return mean_vec[:self.EMBEDDING_DIM]
+            else:
+                # Sentence embedding wrapped in a batch list
+                return result[0][:self.EMBEDDING_DIM]
+        elif isinstance(result, list) and isinstance(result[0], float):
+            # Already a flat sentence embedding
             return result[:self.EMBEDDING_DIM]
+        else:
+            raise RuntimeError(f"Unexpected HuggingFace response format: {str(result)[:200]}")
