@@ -35,12 +35,12 @@ sequenceDiagram
 | Component | Role | Technology |
 |:---|:---|:---|
 | **WhatsApp User** | The end user asking questions | WhatsApp |
-| **WasenderAPI** | WhatsApp API bridge | WasenderAPI |
-| **FastAPI** | Core backend server | Python / Render |
-| **Pinecone** | Vector database for semantic search | `txstate-rag-v2` index |
-| **Supabase** | SQL database for chat logs & documents | PostgreSQL |
-| **FastEmbed** | Generates text embeddings (ONNX, no PyTorch) | `BAAI/bge-small-en-v1.5` |
-| **Gemini** | LLM for generating responses | Google Gemini API |
+| **WasenderAPI** | WhatsApp API bridge — forwards messages to our webhook | WasenderAPI |
+| **FastAPI** | Core backend server handling all routes and business logic | Python / Render |
+| **Pinecone** | Vector database for semantic similarity search | `txstate-rag-v2` index |
+| **Supabase** | SQL database for persisting chat logs & document metadata | PostgreSQL |
+| **FastEmbed** | Local ONNX-based text embeddings — no GPU, no PyTorch needed | `BAAI/bge-small-en-v1.5` (384 dims) |
+| **Gemini** | Primary LLM for generating responses (free, reliable fallback) | Google Gemini API |
 
 ---
 
@@ -54,12 +54,23 @@ pip install -r requirements.txt
 ### Step 2: Set Up Environment Variables
 Create a `.env` file in the project root:
 ```env
+# Supabase — PostgreSQL for chat history & document tracking
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_service_role_key
+
+# OpenAI — Primary LLM (GPT-4o-mini). Leave blank to skip and use fallbacks.
 OPENAI_API_KEY=your_openai_api_key
+
+# Pinecone — Vector store for RAG semantic search
 PINECONE_API_KEY=your_pinecone_api_key
+
+# WasenderAPI — WhatsApp messaging bridge
 WASENDER_API_KEY=your_wasender_api_key
+
+# HuggingFace — Free inference API fallback (second in chain)
 HF_API_KEY=your_huggingface_api_key
+
+# Google Gemini — Final LLM fallback (most reliable on free tier)
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
@@ -81,23 +92,23 @@ Use the generated URL as your WasenderAPI webhook.
 
 ### Phase 1: Document Ingestion
 When you upload a PDF via the Admin UI:
-1. **Text Extraction** — `pypdf` reads the PDF
-2. **Chunking** — Text is split into overlapping chunks via `langchain-text-splitters`
-3. **Embedding** — Each chunk is vectorized using **FastEmbed** (`BAAI/bge-small-en-v1.5`, 384 dims, ONNX)
-4. **Pinecone Storage** — Vectors stored in `txstate-rag-v2` index
-5. **Supabase Tracking** — File name and status saved in the `documents` table
+1. **Text Extraction** — `pypdf` reads the raw PDF pages
+2. **Chunking** — Text is split into overlapping chunks using `langchain-text-splitters` (preserves context at boundaries)
+3. **Embedding** — Each chunk is vectorized locally using **FastEmbed** (`BAAI/bge-small-en-v1.5`, 384 dims, ONNX runtime — no PyTorch, no GPU required)
+4. **Pinecone Storage** — Vectors uploaded and stored in the `txstate-rag-v2` index (persists across redeploys)
+5. **Supabase Tracking** — File name, upload timestamp, and status saved in the `documents` table
 
 ### Phase 2: Query & Retrieval
 When a WhatsApp message arrives:
-1. The user's question is embedded using the same FastEmbed model
-2. Pinecone finds the top-3 most similar text chunks
-3. The retrieved text becomes the **context** for the AI
+1. The user's question is embedded using the same FastEmbed model (ensures vector space consistency)
+2. Pinecone performs a cosine similarity search and returns the top-3 most relevant text chunks
+3. The retrieved chunks become the **context** injected into the LLM prompt
 
 ### Phase 3: Response Generation (LLM Fallback Chain)
-The `llm_manager.py` tries these in order:
-1. **OpenAI** (GPT) — if API key has credits
-2. **HuggingFace** — free inference fallback
-3. **Google Gemini** — free, reliable fallback
+`services/llm_manager.py` tries these providers in order — if one fails, it moves to the next:
+1. **OpenAI** (`gpt-4o-mini`) — highest quality; requires active API credits
+2. **HuggingFace Inference API** — free fallback; tries multiple models: `Meta-Llama-3.1-8B`, `Meta-Llama-3.1-70B`, `Mistral-7B`, `distilgpt2`
+3. **Google Gemini** (`gemini-1.5-flash` or best available) — final failsafe; auto-discovers available models via SDK
 
 ---
 
@@ -119,9 +130,9 @@ The `llm_manager.py` tries these in order:
 
 | Table | Purpose |
 |---|---|
-| `documents` | Tracks uploaded PDFs and their indexing status |
-| `conversations` | Stores unique phone numbers |
-| `messages` | Full chat history (user + assistant messages) |
+| `documents` | Tracks uploaded PDFs, their file name, and Pinecone indexing status |
+| `conversations` | Stores unique phone numbers (one row per WhatsApp contact) |
+| `messages` | Full chat history per conversation — both user queries and assistant replies |
 
 ---
 
@@ -129,15 +140,15 @@ The `llm_manager.py` tries these in order:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/` | GET | Health check message |
-| `/health` | GET | Server + Supabase status |
-| `/admin` | GET | Admin UI dashboard |
-| `/admin/debug` | GET | Check all env variables |
-| `/admin/upload` | POST | Upload & index a document |
-| `/admin/documents` | GET | List indexed documents |
-| `/admin/documents/{id}` | DELETE | Delete a document + its vectors |
-| `/admin/logs` | GET | Recent chat logs |
-| `/webhook/whatsapp` | POST | WasenderAPI webhook receiver |
+| `/` | GET | Health check — returns a simple alive message |
+| `/health` | GET | Detailed status — checks Supabase connectivity |
+| `/admin` | GET | Admin UI dashboard (upload docs, view logs) |
+| `/admin/debug` | GET | Diagnostic view of all loaded environment variables |
+| `/admin/upload` | POST | Upload a PDF, chunk it, embed it, and push to Pinecone |
+| `/admin/documents` | GET | List all documents tracked in Supabase |
+| `/admin/documents/{id}` | DELETE | Remove a document record from Supabase and its vectors from Pinecone |
+| `/admin/logs` | GET | View recent chat message history |
+| `/webhook/whatsapp` | POST | WasenderAPI webhook — receives and processes incoming WhatsApp messages |
 
 ---
 
@@ -145,19 +156,20 @@ The `llm_manager.py` tries these in order:
 
 | File | Purpose |
 |---|---|
-| `main.py` | FastAPI server, all routes |
-| `services/doc_processor.py` | PDF reading, chunking, Pinecone upload |
-| `services/rag_service.py` | Semantic search via Pinecone |
-| `services/embedding_service.py` | FastEmbed ONNX embeddings (384 dims) |
-| `services/llm_manager.py` | Multi-LLM fallback chain |
-| `static/index.html` | Admin UI |
-| `requirements.txt` | Python dependencies |
-| `.python-version` | Pins Python 3.11.9 for Render |
+| `main.py` | FastAPI server entry point — defines all API routes and startup logic |
+| `services/doc_processor.py` | Handles PDF reading, text chunking, and Pinecone vector upload |
+| `services/rag_service.py` | Performs semantic similarity search against the Pinecone index |
+| `services/embedding_service.py` | Wraps FastEmbed ONNX model (`BAAI/bge-small-en-v1.5`, 384 dims) |
+| `services/llm_manager.py` | Multi-LLM fallback chain: OpenAI → HuggingFace → Gemini |
+| `static/index.html` | Admin UI — browser-based dashboard for document management and log viewing |
+| `requirements.txt` | Python package dependencies (no PyTorch — keeps image size small) |
+| `.python-version` | Pins Python 3.11.9 for Render deployment (required by fastembed Rust bindings) |
 
 ---
 
 ## ⚠️ Known Limitations (Free Tier)
 
-- **Cold starts**: Render free tier spins down after 15 min of inactivity. First message after idle may take 50+ seconds.
-- **Ephemeral disk**: Uploaded PDF files are lost on redeploy. Re-upload via Admin UI after each deployment (vectors remain in Pinecone).
-- **Memory**: 512MB limit. FastEmbed uses ~150MB — within limits.
+- **Cold starts**: Render free tier spins down after 15 min of inactivity. First message after idle may take 50+ seconds to respond.
+- **Ephemeral disk**: Uploaded PDF files are deleted on every redeploy. Re-upload via the Admin UI after each deployment — Pinecone vectors are unaffected and persist.
+- **Memory**: 512MB RAM limit on Render free tier. FastEmbed uses ~150MB at runtime, leaving comfortable headroom.
+- **LLM credits**: OpenAI (`gpt-4o-mini`) requires a funded account. If credits run out, the system automatically falls back to HuggingFace and then Gemini at no cost.
