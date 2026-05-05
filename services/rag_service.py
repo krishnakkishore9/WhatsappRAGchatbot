@@ -1,5 +1,5 @@
 import os
-from openai import OpenAI
+import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
 from dotenv import load_dotenv
 
@@ -7,7 +7,7 @@ load_dotenv()
 
 class RAGService:
     def __init__(self):
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         
         # New Pinecone SDK Initialization
         self.pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -26,9 +26,13 @@ class RAGService:
         self.index = self.pc.Index(self.index_name)
 
     def get_context(self, query: str, top_k: int = 3) -> str:
-        # 1. Generate query embedding with OpenAI (truncated to 384 to match existing index size)
-        res = self.openai_client.embeddings.create(input=[query], model="text-embedding-3-small", dimensions=384)
-        query_embedding = res.data[0].embedding
+        # 1. Generate query embedding with Google Gemini (384 dims)
+        result = genai.embed_content(
+            model="models/text-embedding-004",
+            content=query,
+            output_dimensionality=384
+        )
+        query_embedding = result['embedding']
         
         # 2. Query Pinecone
         results = self.index.query(
