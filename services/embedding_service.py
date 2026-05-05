@@ -12,13 +12,16 @@ class EmbeddingService:
     """
 
     EMBEDDING_DIM = 384
-    BASE_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:embedContent"
+    BASE_URL = "https://generativelanguage.googleapis.com/{version}/models/{model}:embedContent"
 
-    # Try these models in order until one works
+    # Try these (version, model) combinations in order until one works
     MODELS_TO_TRY = [
-        "text-embedding-004",
-        "gemini-embedding-exp-03-07",
-        "embedding-001",
+        ("v1beta", "text-embedding-004"),
+        ("v1",     "text-embedding-004"),
+        ("v1beta", "gemini-embedding-exp-03-07"),
+        ("v1",     "gemini-embedding-exp-03-07"),
+        ("v1beta", "embedding-001"),
+        ("v1",     "embedding-001"),
     ]
 
     def __init__(self):
@@ -37,27 +40,27 @@ class EmbeddingService:
 
         # If we already found a working model, use it directly
         if self.working_model:
-            return self._call_model(self.working_model, text)
+            version, model = self.working_model
+            return self._call_model(version, model, text)
 
-        # Otherwise, try each model in the list until one works
+        # Otherwise, try each (version, model) combo until one works
         last_error = None
-        for model in self.MODELS_TO_TRY:
+        for version, model in self.MODELS_TO_TRY:
             try:
-                result = self._call_model(model, text)
-                self.working_model = model  # Cache successful model
-                print(f"EmbeddingService: Using model '{model}' (auto-discovered).")
+                result = self._call_model(version, model, text)
+                self.working_model = (version, model)  # Cache successful combo
+                print(f"EmbeddingService: Using '{version}/{model}' (auto-discovered).")
                 return result
             except Exception as e:
-                print(f"EmbeddingService: Model '{model}' failed: {e}")
+                print(f"EmbeddingService: '{version}/{model}' failed: {e}")
                 last_error = e
 
         raise RuntimeError(f"All Gemini embedding models failed. Last error: {last_error}")
 
-    def _call_model(self, model: str, text: str) -> list:
-        """Calls the Gemini REST API for a specific embedding model."""
-        url = self.BASE_URL.format(model=model)
+    def _call_model(self, version: str, model: str, text: str) -> list:
+        """Calls the Gemini REST API for a specific version/model combination."""
+        url = self.BASE_URL.format(version=version, model=model)
 
-        # text-embedding-004 supports outputDimensionality; others do not
         payload = {
             "model": f"models/{model}",
             "content": {"parts": [{"text": text}]}
