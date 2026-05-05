@@ -1,89 +1,52 @@
 import os
 import httpx
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
 class EmbeddingService:
     """
-    Generates 384-dimensional text embeddings with a fallback chain:
-    1. Google Gemini text-embedding-004 (free, primary)
-    2. HuggingFace all-MiniLM-L6-v2 via Inference API (free, fallback)
+    Generates 384-dimensional text embeddings.
+    Calls the Google Gemini REST API directly (bypasses SDK version issues).
+    Model: text-embedding-004
     """
 
-    GEMINI_MODEL = "models/text-embedding-004"
-    HF_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384
+    GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
 
     def __init__(self):
-        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        self.hf_key = os.getenv("HF_API_KEY", "").strip()
-
-        if gemini_key:
-            try:
-                genai.configure(api_key=gemini_key)
-                self.gemini_available = True
-                print("EmbeddingService: Google Gemini configured.")
-            except Exception as e:
-                print(f"EmbeddingService: Gemini config failed: {e}")
-                self.gemini_available = False
+        self.gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if self.gemini_key:
+            print("EmbeddingService: Gemini API key loaded.")
         else:
-            self.gemini_available = False
-            print("EmbeddingService: No GEMINI_API_KEY found.")
-
-        if self.hf_key:
-            print("EmbeddingService: HuggingFace fallback available.")
-        else:
-            print("EmbeddingService: WARNING - No HF_API_KEY found. Fallback unavailable.")
+            print("EmbeddingService: WARNING - No GEMINI_API_KEY found!")
 
     def embed(self, text: str) -> list:
         """Returns a 384-dimensional embedding vector for the given text."""
-        # 1. Try Google Gemini
-        if self.gemini_available:
-            try:
-                result = genai.embed_content(
-                    model=self.GEMINI_MODEL,
-                    content=text,
-                    output_dimensionality=self.EMBEDDING_DIM
-                )
-                return result['embedding']
-            except Exception as e:
-                print(f"EmbeddingService: Gemini failed ({e}), falling back to HuggingFace...")
+        if not self.gemini_key:
+            raise RuntimeError("GEMINI_API_KEY is not set. Cannot generate embeddings.")
 
-        # 2. Fallback: HuggingFace Inference API
-        return self._embed_huggingface(text)
-
-    def _embed_huggingface(self, text: str) -> list:
-        """Calls HuggingFace Inference API for all-MiniLM-L6-v2 (384 dims)."""
-        if not self.hf_key:
-            raise RuntimeError("No embedding service available. Please set GEMINI_API_KEY or HF_API_KEY.")
-
-        api_url = f"https://api-inference.huggingface.co/models/{self.HF_MODEL}"
-        headers = {"Authorization": f"Bearer {self.hf_key}"}
+        payload = {
+            "model": "models/text-embedding-004",
+            "content": {
+                "parts": [{"text": text}]
+            },
+            "outputDimensionality": self.EMBEDDING_DIM
+        }
 
         with httpx.Client() as client:
             response = client.post(
-                api_url,
-                headers=headers,
-                json={"inputs": text, "options": {"wait_for_model": True}},
+                self.GEMINI_API_URL,
+                params={"key": self.gemini_key},
+                json=payload,
                 timeout=30.0
             )
-            response.raise_for_status()
-            result = response.json()
 
-        # sentence-transformers models return a list of lists (batch of 1 → [[v1, v2, ...]])
-        if isinstance(result, list) and isinstance(result[0], list):
-            if isinstance(result[0][0], list):
-                # Token-level embeddings — mean pool
-                tokens = result[0]
-                mean_vec = [sum(t[i] for t in tokens) / len(tokens) for i in range(len(tokens[0]))]
-                return mean_vec[:self.EMBEDDING_DIM]
-            else:
-                # Sentence embedding wrapped in a batch list
-                return result[0][:self.EMBEDDING_DIM]
-        elif isinstance(result, list) and isinstance(result[0], float):
-            # Already a flat sentence embedding
-            return result[:self.EMBEDDING_DIM]
-        else:
-            raise RuntimeError(f"Unexpected HuggingFace response format: {str(result)[:200]}")
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Gemini embedding API error {response.status_code}: {response.text[:300]}"
+            )
+
+        result = response.json()
+        return result["embedding"]["values"]
+
