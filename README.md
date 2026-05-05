@@ -1,160 +1,163 @@
 # 🤖 Bob: Your AI-Powered WhatsApp Assistant
 
-Welcome! **Bob** is a smart chatbot that reads your documents (PDFs/Text) and answers questions about them on WhatsApp. This guide will help you understand, set up, and test your own AI assistant.
+**Bob** is a smart chatbot that reads your university documents (PDFs/Text files) and answers questions about them via WhatsApp. It uses a **RAG (Retrieval-Augmented Generation)** pipeline to find relevant information from your documents and generate accurate, friendly responses.
+
+> **Live App**: `https://whatsappragchatbot.onrender.com`
+> **Admin UI**: `https://whatsappragchatbot.onrender.com/admin`
+> **Webhook**: `https://whatsappragchatbot.onrender.com/webhook/whatsapp`
 
 ---
 
-## 🗺️ The "Big Picture" (How it works)
-
-Think of the system as a relay race. A message from a user's phone has to travel through several "stations" before Bob can answer.
+## 🗺️ How It Works (Big Picture)
 
 ```mermaid
 sequenceDiagram
-    participant U as 📱 User's Phone
+    participant U as 📱 WhatsApp User
     participant W as 🌐 WasenderAPI
-    participant LT as 🌉 Localtunnel
-    participant B as 🧠 Your Computer (Brain)
-    participant DB as 📚 Knowledge (PDFs)
-    participant AI as 🤖 AI (Gemini)
+    participant R as ☁️ Render (FastAPI)
+    participant P as 📌 Pinecone (Vectors)
+    participant AI as 🤖 Gemini AI
 
     U->>W: Sends "What are the fees?"
-    W->>LT: Forwards message to your link
-    LT->>B: Delivers message to your code
-    B->>DB: Looks for "fees" in your PDFs
-    DB-->>B: Returns the fee text
-    B->>AI: "Answer this question using this text"
-    AI-->>B: "The fee is $500..."
-    B->>W: "Send this answer back to the user"
-    W->>U: Delivers Bob's reply
+    W->>R: Forwards to /webhook/whatsapp
+    R->>P: Search for relevant chunks
+    P-->>R: Returns matching text from PDFs
+    R->>AI: "Answer this using the context"
+    AI-->>R: "The fee is $500..."
+    R->>W: Send reply to user
+    W->>U: Bob delivers the answer
 ```
 
 ---
 
-## 👥 Who is Who? (The Team)
+## 👥 System Components
 
-| Part | Nickname | What it does |
-| :--- | :--- | :--- |
-| **WhatsApp User** | The Customer | The person asking Bob a question. |
-| **WasenderAPI** | The Messenger | The bridge between WhatsApp and your code. |
-| **Localtunnel** | The Secret Tunnel | A temporary bridge that lets the internet "see" your private computer. |
-| **FastAPI** | The Brain | Your Python code that manages the logic and "thinks." |
-| **Pinecone** | The Library | Stores the *meaning* of your PDFs as vectors for fast searching. |
-| **Supabase** | The Secretary | Keeps a record of every chat message and uploaded file. |
-| **Gemini** | The Intelligence | The actual AI that writes the friendly responses. |
+| Component | Role | Technology |
+|:---|:---|:---|
+| **WhatsApp User** | The end user asking questions | WhatsApp |
+| **WasenderAPI** | WhatsApp API bridge | WasenderAPI |
+| **FastAPI** | Core backend server | Python / Render |
+| **Pinecone** | Vector database for semantic search | `txstate-rag-v2` index |
+| **Supabase** | SQL database for chat logs & documents | PostgreSQL |
+| **FastEmbed** | Generates text embeddings (ONNX, no PyTorch) | `BAAI/bge-small-en-v1.5` |
+| **Gemini** | LLM for generating responses | Google Gemini API |
 
 ---
 
-## 🚀 How to Run the Project Locally
+## 🚀 Running Locally
 
-### Step 1: Start the Brain (The Server)
-Open a terminal and run:
+### Step 1: Install Dependencies
 ```powershell
-python -m uvicorn main:app --reload
+pip install -r requirements.txt
 ```
-*   **What happens?** This starts the FastAPI server. It is now "listening" for messages at `http://localhost:8000`.
 
-### Step 2: Open the Secret Tunnel
-Open a **second** terminal and run:
+### Step 2: Set Up Environment Variables
+Create a `.env` file in the project root:
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_service_role_key
+OPENAI_API_KEY=your_openai_api_key
+PINECONE_API_KEY=your_pinecone_api_key
+WASENDER_API_KEY=your_wasender_api_key
+HF_API_KEY=your_huggingface_api_key
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### Step 3: Start the Server
+```powershell
+uvicorn main:app --reload
+```
+Server runs at `http://localhost:8000`
+
+### Step 4: Expose Locally via Tunnel
 ```powershell
 npx localtunnel --port 8000
 ```
-*   **What happens?** You will get a public link like `https://funny-cats-jump.loca.lt`. Use this link for your Webhook.
+Use the generated URL as your WasenderAPI webhook.
 
 ---
 
-## 🧠 2. The "Under the Hood" Flow (Learning RAG)
+## 🧠 RAG Pipeline (Under the Hood)
 
-### Phase 1: Ingestion (Uploading Documents)
-When you click "Upload" in the Admin UI:
-1.  **Text Extraction**: The system reads your PDF/Text file using `pypdf`.
-2.  **Chunking**: The text is broken into small pieces (chunks) so the AI can find specific answers easily.
-3.  **Embedding**: Each chunk is converted into a list of numbers (a vector) using a local model (`all-MiniLM-L6-v2`).
-4.  **Pinecone Storage**: These vectors are saved in your **Pinecone** vector database.
-5.  **Supabase Tracking**: The file name and status are saved in your **Supabase** SQL database.
+### Phase 1: Document Ingestion
+When you upload a PDF via the Admin UI:
+1. **Text Extraction** — `pypdf` reads the PDF
+2. **Chunking** — Text is split into overlapping chunks via `langchain-text-splitters`
+3. **Embedding** — Each chunk is vectorized using **FastEmbed** (`BAAI/bge-small-en-v1.5`, 384 dims, ONNX)
+4. **Pinecone Storage** — Vectors stored in `txstate-rag-v2` index
+5. **Supabase Tracking** — File name and status saved in the `documents` table
 
-### Phase 2: Retrieval (The "R" in RAG)
-When a message arrives from WhatsApp:
-1.  **Search**: The user's question is converted into a vector.
-2.  **Context Finding**: We ask Pinecone: *"Find the 3 chunks of text that are most similar to this question."*
-3.  **Retrieval**: Pinecone returns the actual text from your PDFs.
+### Phase 2: Query & Retrieval
+When a WhatsApp message arrives:
+1. The user's question is embedded using the same FastEmbed model
+2. Pinecone finds the top-3 most similar text chunks
+3. The retrieved text becomes the **context** for the AI
 
-### Phase 3: Generation (The "G" in RAG)
-1.  **The Prompt**: We combine the **Context** + **User Question** into a single message for the AI.
-2.  **Fallback Chain**: 
-    *   Try **OpenAI** first.
-    *   If OpenAI is out of credits, try **Hugging Face**.
-    *   If those fail, use **Gemini 2.5 Flash**.
-3.  **The Answer**: The AI generates a professional response as "Bob".
+### Phase 3: Response Generation (LLM Fallback Chain)
+The `llm_manager.py` tries these in order:
+1. **OpenAI** (GPT) — if API key has credits
+2. **HuggingFace** — free inference fallback
+3. **Google Gemini** — free, reliable fallback
 
 ---
 
-## 📱 3. How to Connect to Real WhatsApp (The Deep Dive)
+## 📱 Connecting to WhatsApp (Production)
 
-### Step 1: The "Phone Link"
-Go to your **WasenderAPI Dashboard** and "Add Instance". Scan the QR code with your WhatsApp app (like WhatsApp Web).
+1. Log in to **WasenderAPI Dashboard** → Add Instance → Scan QR code.
+2. Go to **Instance Settings** → Webhook URL:
+   ```
+   https://whatsappragchatbot.onrender.com/webhook/whatsapp
+   ```
+3. Set **Webhook Status** to **Enabled** and save.
+4. Send a WhatsApp message to your connected number to test.
 
-### Step 2: The "Listening"
-When a customer messages you, WasenderAPI "sees" it and needs to tell your code.
-
-### Step 3: The "Tunnel"
-Run `npx localtunnel --port 8000` to get your public link.
-
-### Step 4: The WasenderAPI Settings (Crucial)
-1.  Log in to WasenderAPI Dashboard.
-2.  Go to **Instances** -> **Settings**.
-3.  Paste your **Tunnel Link** + `/webhook/whatsapp` into the **Webhook URL** field.
-4.  Set **Webhook Status** to **Enabled** and **Save**.
+> **Note**: WasenderAPI's "Simulate" button requires a Personal Access Token. Skip it — just send a real WhatsApp message to test.
 
 ---
 
-## ✅ Evaluation & Verification (The Reply)
+## 📊 Database Schema (Supabase)
 
-#### A. How the code "Executes" the reply:
-Inside `main.py`, as soon as Bob finishes thinking, the program calls the **WasenderAPI** "Send Message" endpoint to deliver the reply.
-
-#### B. How YOU evaluate the program:
-1.  **The Visual Test**: Send a message from a different phone. If Bob replies on WhatsApp, it works!
-2.  **The Terminal Test**: Watch your `uvicorn` terminal for `Webhook Received: {...}` logs.
-3.  **The Database Test**: Check the `messages` table in **Supabase** to see the chat history.
+| Table | Purpose |
+|---|---|
+| `documents` | Tracks uploaded PDFs and their indexing status |
+| `conversations` | Stores unique phone numbers |
+| `messages` | Full chat history (user + assistant messages) |
 
 ---
 
-## 📊 4. Database Schema (Supabase)
-*   **`documents`**: Tracks uploaded files and their indexing status.
-*   **`conversations`**: Stores unique phone numbers to group messages.
-*   **`messages`**: Stores the actual text of every user and assistant message.
+## 🩺 API Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Health check message |
+| `/health` | GET | Server + Supabase status |
+| `/admin` | GET | Admin UI dashboard |
+| `/admin/debug` | GET | Check all env variables |
+| `/admin/upload` | POST | Upload & index a document |
+| `/admin/documents` | GET | List indexed documents |
+| `/admin/documents/{id}` | DELETE | Delete a document + its vectors |
+| `/admin/logs` | GET | Recent chat logs |
+| `/webhook/whatsapp` | POST | WasenderAPI webhook receiver |
 
 ---
 
----
+## 🛠️ Key Files
 
-## 📚 Real-World Examples (Based on your PDFs)
-
-Here are a few examples of how Bob uses your uploaded documents to answer questions:
-
-| User Question | Bob's Answer (The "Magic") | Source Document used |
-| :--- | :--- | :--- |
-| *"What is the admission fee for 2024?"* | *"Based on the Fees Policy, the admission fee for the 2024 academic year is $500..."* | `fees_policy.pdf` |
-| *"Do you have an MBA program?"* | *"Yes! According to the Course Details, we offer a 2-year MBA program with specializations in..."* | `course_details.pdf` |
-| *"How do I apply?"* | *"You can apply online via our portal. The Admission Process document states you need your high school transcripts..."* | `admission_process.pdf` |
-| *"What is the attendance policy?"* | *"According to University Policies, a minimum of 75% attendance is required to sit for exams..."* | `University_policies.pdf` |
-| *"Do you provide hostel facilities?"* | *"Yes, the FAQ document mentions that we have separate hostels for boys and girls with 24/7 security..."* | `faq.pdf` |
-| *"When is the annual fest?"* | *"The University Brochure mentions that our annual cultural fest, 'Euphoria', usually happens in March..."* | `brochure.pdf` |
-| *"What are the library timings?"* | *"The Student Handbook states the library is open from 8:00 AM to 10:00 PM on weekdays and until 6:00 PM on Saturdays."* | `handbook.pdf` |
-| *"Can you tell me about placement records for CSE?"* | *"According to the 2023 Placement Report, the CSE department had a 95% placement rate with a median package of $12 LPA."* | `placement_report.pdf` |
-| *"What is the deadline for the final semester project?"* | *"The Academic Calendar for 2024 indicates that final semester project submissions are due by May 15th."* | `academic_calendar.pdf` |
-| *"Can I get a refund if I cancel?"* | *"I'm sorry, I don't have that information. Please contact the Admissions Office at 9704574919 for the refund policy."* | *(If not in PDFs)* |
-
-### 🚀 Advanced Scenarios
-*   **Contextual Follow-ups**: Bob remembers your previous questions. If you ask *"What about the hostel?"* after asking about admissions, he knows you're talking about the university facilities.
-*   **Multi-Document Synthesis**: If information is split across multiple PDFs (e.g., a fee in one and a deadline in another), Bob combines them into a single, coherent answer.
-*   **Error Handling**: If a document is uploaded but not yet indexed, Bob will gracefully let you know he's still "reading up" on that topic.
-
+| File | Purpose |
+|---|---|
+| `main.py` | FastAPI server, all routes |
+| `services/doc_processor.py` | PDF reading, chunking, Pinecone upload |
+| `services/rag_service.py` | Semantic search via Pinecone |
+| `services/embedding_service.py` | FastEmbed ONNX embeddings (384 dims) |
+| `services/llm_manager.py` | Multi-LLM fallback chain |
+| `static/index.html` | Admin UI |
+| `requirements.txt` | Python dependencies |
+| `.python-version` | Pins Python 3.11.9 for Render |
 
 ---
 
-## 🛠️ Key Files to Explore
-*   `main.py`: The "Brain" handling web requests.
-*   `services/doc_processor.py`: Handles PDFs and vectorizing text.
-*   `services/rag_service.py`: Handles searching Pinecone for answers.
-*   `services/llm_manager.py`: Handles the multi-AI fallback logic.
+## ⚠️ Known Limitations (Free Tier)
+
+- **Cold starts**: Render free tier spins down after 15 min of inactivity. First message after idle may take 50+ seconds.
+- **Ephemeral disk**: Uploaded PDF files are lost on redeploy. Re-upload via Admin UI after each deployment (vectors remain in Pinecone).
+- **Memory**: 512MB limit. FastEmbed uses ~150MB — within limits.
