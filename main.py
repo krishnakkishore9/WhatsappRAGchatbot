@@ -14,6 +14,9 @@ load_dotenv(override=True)
 
 app = FastAPI(title="WhatsappRAGChatbot")
 
+# Ensure uploads directory exists (Render ephemeral filesystem)
+os.makedirs("uploads", exist_ok=True)
+
 # Services
 doc_processor = DocumentProcessor()
 rag_service = RAGService()

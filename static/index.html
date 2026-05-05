@@ -121,18 +121,26 @@
 
         // Load Logs
         async function loadLogs() {
-            const res = await fetch('/admin/logs');
-            const logs = await res.json();
-            const container = document.getElementById('logsContainer');
-            container.innerHTML = logs.map(log => `
-                <div class="log-entry">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span class="role-${log.role}">${log.role.toUpperCase()} - ${log.conversations.phone_number}</span>
-                        <small class="text-muted">${new Date(log.created_at).toLocaleString()}</small>
+            try {
+                const res = await fetch('/admin/logs');
+                if (!res.ok) {
+                    document.getElementById('logsContainer').innerHTML = '<div class="text-center p-4 text-danger">Could not load logs.</div>';
+                    return;
+                }
+                const logs = await res.json();
+                const container = document.getElementById('logsContainer');
+                container.innerHTML = logs.map(log => `
+                    <div class="log-entry">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="role-${log.role}">${log.role.toUpperCase()} - ${log.conversations?.phone_number || 'unknown'}</span>
+                            <small class="text-muted">${new Date(log.created_at).toLocaleString()}</small>
+                        </div>
+                        <div>${log.content}</div>
                     </div>
-                    <div>${log.content}</div>
-                </div>
-            `).join('') || '<div class="text-center p-4 text-muted">No logs found</div>';
+                `).join('') || '<div class="text-center p-4 text-muted">No logs found</div>';
+            } catch(err) {
+                document.getElementById('logsContainer').innerHTML = `<div class="text-center p-4 text-danger">Error loading logs: ${err.message}</div>`;
+            }
         }
 
         // Handle Upload
